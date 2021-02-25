@@ -19,6 +19,7 @@ Fl_Text_Display::Style_Table_Entry styleTable[] = {
 
 // File context vector
 std::vector<std::tuple<Fl_Text_Editor *, Fl_Text_Buffer *, Fl_Text_Buffer *>> fileContext;
+std::vector<std::tuple<std::string, Fl_Text_Editor *>> fullFileName;
 
 // File switcher
 Fl_Window * window;
@@ -87,10 +88,12 @@ std::tuple<Fl_Text_Editor *, Fl_Text_Buffer *, Fl_Text_Buffer *> ui_open_file(st
 	char * cfile = new char[filename.length()+1];
 	strcpy(cfile,filename.c_str());
 
-	Fl_Group * fileTab = new Fl_Group(tree->w()+1,(fontsize*2),window->w()-tree->w()-2,window->h()-(fontsize*2));
+	Fl_Group * tabOfFile = new Fl_Group(tree->w()+1,(fontsize*2),window->w()-tree->w()-2,window->h()-(fontsize*2));
 	Fl_Text_Editor * editor = new Fl_Text_Editor(tree->w()+1,fontsize*2,window->w()-tree->w()-2,window->h()-(fontsize*2));
 	Fl_Text_Buffer * text = new Fl_Text_Buffer();
 	Fl_Text_Buffer * style = new Fl_Text_Buffer();
+
+	fullFileName.push_back(std::make_tuple(cfile,editor));
 
 	text->insertfile(cfile,0);
 	editor->buffer(text);
@@ -99,12 +102,13 @@ std::tuple<Fl_Text_Editor *, Fl_Text_Buffer *, Fl_Text_Buffer *> ui_open_file(st
 	delete cfile;
 	cfile = new char[disp_filename.length()+1];
 	strcpy(cfile,disp_filename.c_str());
-	fileTab->label(cfile);
-	fileTab->end();
+	tabOfFile->label(cfile);
+	tabOfFile->end();
 
 	tabs->end();
-	tabs->value(fileTab);
+	tabs->value(tabOfFile);
 	tabs->redraw();
+
 	return std::make_tuple(editor,text,style);
 }
 
@@ -131,10 +135,81 @@ void ui_project_tree_callback(Fl_Widget * widget, void * data) {
 	return;
 }
 
-// TODO: Why it segfaults?
 void ui_close_file(Fl_Widget * widget, void * data) {
-	Fl_Group * group;
-	group = fileTabs->current();
+	Fl_Widget * tabOfFile;
+	tabOfFile = fileTabs->value();
+	if(tabOfFile == NULL) {
+		printf("No file to close\n");
+		return;
+	}
+	fileTabs->remove(tabOfFile);
+	delete tabOfFile;
+
+	// We need to redraw everything
+	window->redraw();
+	return;
+}
+
+void ui_save_file(Fl_Widget * widget, void * data) {
+	Fl_Widget * tabOfFile;
+	tabOfFile = fileTabs->value();
+	if(tabOfFile == NULL) {
+		printf("No file to close\n");
+		return;
+	}
+
+	Fl_Group * tabOfFileGroup;
+	tabOfFileGroup = (Fl_Group *)tabOfFile;
+	if(tabOfFileGroup == NULL) {
+		printf("No tab file group within tab\n");
+		return;
+	}
+
+	if(tabOfFileGroup->children() != 0) {
+
+		printf("%s\n",tabOfFileGroup->label());
+
+		Fl_Widget * const * fileWidget;
+		fileWidget = tabOfFileGroup->array();
+		if(fileWidget == NULL) {
+			printf("Group contains no widgets\n");
+			return;
+		}
+
+		for(int i = 0; i < tabOfFileGroup->children(); i++) {
+			Fl_Widget * expectedFileWidgetInFileGroupTab;
+			expectedFileWidgetInFileGroupTab = fileWidget[i];
+
+			Fl_Text_Editor * expectedFileEditor;
+			expectedFileEditor = (Fl_Text_Editor *)expectedFileWidgetInFileGroupTab;
+
+			Fl_Text_Buffer * expectedFileBuffer = expectedFileEditor->buffer();
+
+			// Find in array
+			for(auto& o: fullFileName) {
+				if(std::get<Fl_Text_Editor *>(o) != expectedFileEditor) {
+					continue;
+				}
+
+				std::string filename;
+				filename = std::get<std::string>(o);
+
+				FILE * fp;
+				fp = fopen(filename.c_str(),"wt");
+				if(fp == NULL) {
+					printf("Cannot truncate file\n");
+					return;
+				}
+				fputs(expectedFileBuffer->text(),fp);
+				fclose(fp);
+			}
+		}
+
+		//Fl_Text_Editor * textEditor;
+		//textEditor = (Fl_Text_Editor *)fileWidget;
+
+		printf("File saved\n");
+	}
 	return;
 }
 
@@ -151,13 +226,23 @@ void ui_qemu_run(Fl_Widget * widget, void * data) {
 
 	char buf[BUFSIZ];
 	FILE * fp;
-	fp = popen("qemu-system-i386 -trace scsi* -trace usb* -trace sata* -trace ata* -d unimp,guest_errors 2>&1","r");
+	fp = popen("qemu-system-i386 -trace pci* -trace scsi* -trace usb* -trace sata* -trace ata* -d unimp,guest_errors","r");
 	if(fp == NULL) {
 		return;
 	}
+
+	Fl_Text_Buffer * txtBuf = new Fl_Text_Buffer();
 	while(fgets((char *)&buf,sizeof(buf),fp) != NULL) {
-		std::cout << buf << std::endl;
+		txtBuf->append(buf);
+		//std::cout << buf << std::endl;
 	}
+
+	std::cout << txtBuf->text() << std::endl;
+
+	std::tuple<Fl_Text_Editor *, Fl_Text_Buffer *, Fl_Text_Buffer *> logOutput;
+	logOutput = ui_open_file("/tmp/logoutput_osdev_ide.txt",fileTabs);
+	std::get<1>(logOutput) = txtBuf;
+	fileContext.push_back(logOutput);
 
 	std::cout << "pipe closed" << std::endl;
 
@@ -170,6 +255,7 @@ int ui_main_loop(int argc, const char ** argv) {
 		{"File",0,0,0,FL_SUBMENU},
 			{"Create",FL_CTRL+'c',0,0},
 			{"Open",FL_CTRL+'o',0,0},
+			{"Save",FL_CTRL+'s',ui_save_file,0},
 			{"Close",FL_CTRL+'w',ui_close_file,0},
 			{"Quit",0,0,0},
 			{0},
