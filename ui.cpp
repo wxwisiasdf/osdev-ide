@@ -3,255 +3,47 @@
 #include <FL/Fl_Text_Editor.H>
 #include <FL/Fl_Text_Display.H>
 #include <FL/Fl_File_Chooser.H>
+#include <FL/Fl_Value_Input.H>
 #include <FL/Fl_Tabs.H>
-#include <ctype.h>
-#include <cstring>
 #include "ui.hpp"
 #include "project.hpp"
 #include "qemu.hpp"
+#include "tab.hpp"
+#include "editor.hpp"
 
-static unsigned fontsize = 24;
+#include <unistd.h>
+#include "buffer.hpp"
+#include "find.hpp"
 
-// Global styling
-Fl_Text_Display::Style_Table_Entry styleTable[] = {
-	{FL_BLACK,		FL_COURIER,			FL_NORMAL_SIZE}, // Plain
-	{FL_DARK_GREEN,	FL_COURIER,			FL_NORMAL_SIZE}, // Macros
-	{FL_GRAY,		FL_COURIER_ITALIC,	FL_NORMAL_SIZE}, // Comments
-	{FL_BLUE,		FL_COURIER,			FL_NORMAL_SIZE}, // Number
-	{FL_BLUE,		FL_COURIER_BOLD,	FL_NORMAL_SIZE}, // Keywords
-	{FL_RED,		FL_COURIER,			FL_NORMAL_SIZE}, // Strings
-};
+// Globals
+int globalFontsize = 24;
+Fl_Window * globalWindow;
+Fl_Menu_Bar * globalMenuBar;
 
-// File context vector
-std::vector<std::tuple<Fl_Text_Editor *, Fl_Text_Buffer *, Fl_Text_Buffer *>> fileContext;
-std::vector<std::tuple<std::string, Fl_Text_Editor *>> fullFileName;
-
-// File switcher
-Fl_Window * window;
-Fl_Tabs * fileTabs;
-Fl_Tree * tree;
-Fl_Menu_Bar * menuBar;
-
-Fl_Window * traceSelWindow;
-Fl_Tabs * traceSelTabs;
-
-Fl_Text_Editor * ui_get_current_text_editor(void) {
-	Fl_Widget * tabOfFile;
-	tabOfFile = fileTabs->value();
-	if(tabOfFile == NULL) {
-		printf("No file to close\n");
-		return NULL;
-	}
-
-	Fl_Group * tabOfFileGroup;
-	tabOfFileGroup = (Fl_Group *)tabOfFile;
-	if(tabOfFileGroup == NULL) {
-		printf("No tab file group within tab\n");
-		return NULL;
-	}
-
-	if(tabOfFileGroup->children() != 0) {
-		Fl_Widget * const * fileWidget;
-		fileWidget = tabOfFileGroup->array();
-		if(fileWidget == NULL) {
-			printf("Group contains no widgets\n");
-			return NULL;
-		}
-
-		for(int i = 0; i < tabOfFileGroup->children(); i++) {
-			Fl_Widget * expectedFileWidgetInFileGroupTab;
-			expectedFileWidgetInFileGroupTab = fileWidget[i];
-
-			Fl_Text_Editor * fileEditor = (Fl_Text_Editor *)expectedFileWidgetInFileGroupTab;
-			return fileEditor;
-		}
-	}
-	return NULL;
-}
-
+#include <FL/Fl_File_Icon.H>
 Fl_Tree * ui_project_to_tree(std::array<std::vector<std::string>, 2> project) {
 	//tree = new Fl_Tree(0,24,320,window->decorated_h()-fontsize);
 
+	globalProjectTree->clear();
+
 	// Add directories to project tree, and show them with a nice folder icon
 	for(const auto& dir: project.at(0)) {
-		tree->add(dir.c_str());
+		globalProjectTree->add(dir.c_str());
 	}
 
 	// Add files
 	for(const auto& file: project.at(1)) {
-		tree->add(file.c_str());
+		globalProjectTree->add(file.c_str());
+		//globalProjectTree->usericon(Fl_File_Icon::ANY);
 	}
 
-	tree->resizable(tree);
-	tree->showroot(false);
-	return tree;
+	globalProjectTree->resizable(globalProjectTree);
+	globalProjectTree->showroot(false);
+	return globalProjectTree;
 }
 
-std::regex ui_replace_dialog(Fl_Text_Buffer * buffer) {
-	std::regex re;
-	Fl_Window * dialog = new Fl_Window(300,75,"Replace");
-	Fl_Input * find = new Fl_Input(100,0,200,24,"Find:");
-	Fl_Input * replace = new Fl_Input(100,24,200,24,"Replace:");
-	Fl_Button * replace_all = new Fl_Button(5,50,90,24,"Replace all");
-	Fl_Button * replace_next = new Fl_Button(100,50,120,24,"Replace next");
-	Fl_Button * cancel = new Fl_Button(225,50,60,24,"Cancel");
-
-	dialog->add(find);
-	dialog->add(replace);
-	dialog->add(replace_all);
-	dialog->add(replace_next);
-	dialog->add(cancel);
-	dialog->end();
-	dialog->show();
-	return re;
-}
-
-const char * keywords[] = {
-	"template","NULL","nullptr","static","inline","const","char","unsigned",
-	"size_t","void","halfptr","dynamic_cast","static_cast","case","switch",
-	"if","else","goto","break","continue","while","do","for","uint8_t",
-	"uint16_t","uint32_t","uint64_t","uint128_t","shared_ptr","class",
-	"new","delete","return","auto","ssize_t","ptrdiff_t","pthread_t",
-	"extern","int","long","typedef","typeof","sizeof","NULLPTR",
-	"struct","union","enum","FILE","interrupt","_Cdecl","asm","__asm__",
-	"__volatile__","volatile","namespace","using","true","false","fullptr",
-	"exception","bool","throw","catch","public","private","virtual","uintptr_t",
-	"intptr_t","int16_t","int8_t","int32_t","int64_t","int128_t","float","double",
-	"float_t"
-};
-
-void ui_restyle(Fl_Text_Buffer * textBuffer, Fl_Text_Buffer * styleBuffer) {
-	int sz = textBuffer->length();
-	char * style = new char[sz+1];
-
-	// Paint everything of color black
-	memset(style,'A',sz);
-	style[sz] = '\0';
-
-	// Paint depending on keywords
-	const char * text = textBuffer->text();
-	for(size_t i = 0; i < sz; i++) {
-		const char * end_of;
-		size_t diff;
-		int base; // used for strings only
-
-		if(text[i] == '#') {
-			printf("macro\n");
-			end_of = strchr(&text[i],'\n');
-			if(end_of == NULL) {
-				continue;
-			}
-
-			diff = strlen(&text[i])-strlen(end_of);
-			memset(&style[i],'B',diff);
-			i += diff;
-		} else if(text[i] == '/') {
-			bool is_multi;
-			end_of = NULL;
-			if(text[i+1] == '/') { // single line comment
-				end_of = strchr(&text[i],'\n');
-				is_multi = false;
-			} else if(text[i+1] == '*') { // multi line comment
-				end_of = strstr(&text[i],"*/");
-				is_multi = true;
-			}
-			if(end_of == NULL) {
-				continue;
-			}
-			diff = strlen(&text[i])-strlen(end_of);
-			if(is_multi) {
-				diff += 2;
-			}
-			memset(&style[i],'C',diff);
-			i += diff;
-		} else if(text[i] == '\'' || text[i] == '"') {
-			// strings require a bit of special parsing
-			base = text[i];
-			style[i] = 'F';
-			i++;
-			while(text[i] != base) {
-				style[i] = 'F';
-				if(text[i] == '\\') {
-					style[i+1] = 'F';
-					i += 2;
-					continue;
-				}
-				i++;
-			}
-			style[i] = 'F';
-		} else if(text[i] >= '0' && text[i] <= '9') {
-			printf("number\n");
-			// a number
-			while(isalnum(text[i])) {
-				style[i] = 'D';
-				i++;
-			}
-		} else {
-			printf("keyword\n");
-			// check keywording
-			const char * wspace = strpbrk(&text[i]," \t\n()*&[],\"'.-<>=!#%^;:");
-			if(wspace == NULL) {
-				continue;
-			}
-			diff = strlen(&text[i])-strlen(wspace);
-			if(!diff) {
-				continue;
-			}
-			char * partText = new char[diff+1];
-			strncpy(partText,&text[i],diff); // strcpy is just sugar memcpy
-			partText[diff] = '\0';
-			for(size_t j = 0; j < (sizeof(keywords)/sizeof(const char *))-1; j++) {
-				if(strcmp(keywords[j],partText)) {
-					continue;
-				}
-
-				memset(&style[i],'E',strlen(keywords[j]));
-				i += diff;
-				break;
-			}
-			delete partText;
-		}
-	}
-
-	styleBuffer->text(style);
-	return;
-}
-
-std::tuple<Fl_Text_Editor *, Fl_Text_Buffer *, Fl_Text_Buffer *> ui_open_file(std::string filename, Fl_Tabs * tabs) {
-	tabs->begin();
-
-	size_t last_idx = filename.find_last_of('/');
-	std::string disp_filename = filename;
-	if(last_idx != 0) {
-		disp_filename = &filename[last_idx+1];
-	}
-
-	char * cfile = new char[filename.length()+1];
-	strcpy(cfile,filename.c_str());
-
-	Fl_Group * tabOfFile = new Fl_Group(tree->w()+1,(fontsize*2),window->w()-tree->w()-2,window->h()-(fontsize*2));
-	Fl_Text_Editor * editor = new Fl_Text_Editor(tree->w()+1,fontsize*2,window->w()-tree->w()-2,window->h()-(fontsize*2));
-	Fl_Text_Buffer * text = new Fl_Text_Buffer();
-	Fl_Text_Buffer * style = new Fl_Text_Buffer();
-
-	fullFileName.push_back(std::make_tuple(cfile,editor));
-
-	text->insertfile(cfile,0);
-	ui_restyle(text,style);
-
-	editor->buffer(text);
-	editor->highlight_data(style,styleTable,sizeof(styleTable)/sizeof(styleTable[0]),'A'-1,(Fl_Text_Display::Unfinished_Style_Cb)ui_restyle,0);
-	delete cfile;
-	cfile = new char[disp_filename.length()+1];
-	strcpy(cfile,disp_filename.c_str());
-	tabOfFile->label(cfile);
-	tabOfFile->end();
-
-	tabs->end();
-	tabs->value(tabOfFile);
-	tabs->redraw();
-
-	return std::make_tuple(editor,text,style);
+void ui_exit(Fl_Widget * widget, void * data) {
+	exit(0);
 }
 
 // Creates new buffer when we click on the project tree
@@ -269,7 +61,7 @@ void ui_project_tree_callback(Fl_Widget * widget, void * data) {
 
 	switch(tree->callback_reason()) {
 	case FL_TREE_REASON_SELECTED:
-		fileContext.push_back(ui_open_file(end_path,fileTabs));
+		tab_open_file(end_path,globalTabManager);
 		break;
 	default:
 		break;
@@ -277,45 +69,74 @@ void ui_project_tree_callback(Fl_Widget * widget, void * data) {
 	return;
 }
 
-void ui_close_file(Fl_Widget * widget, void * data) {
+void ui_open_file_callback(Fl_Widget * widget, void * data) {
+	const char * end_path = fl_file_chooser("Open file","Any file (*.*)",NULL,0);
+	tab_open_file(end_path,globalTabManager);
+	return;
+}
+
+void ui_close_file_callback(Fl_Widget * widget, void * data) {
 	Fl_Widget * tabOfFile;
-	tabOfFile = fileTabs->value();
+	tabOfFile = globalTabManager->value();
 	if(tabOfFile == NULL) {
 		printf("No file to close\n");
 		return;
 	}
-	fileTabs->remove(tabOfFile);
+	globalTabManager->remove(tabOfFile);
 	delete tabOfFile;
 
 	// We need to redraw everything
-	window->redraw();
+	globalWindow->redraw();
 	return;
 }
 
-void ui_save_file(Fl_Widget * widget, void * data) {
+void ui_save_file_callback(Fl_Widget * widget, void * data) {
 	Fl_Text_Editor * editor;
-	editor = ui_get_current_text_editor();
+	editor = editor_current();
 
 	Fl_Text_Buffer * fileBuffer = editor->buffer();
 	if(fileBuffer == NULL)
 		return;
 
+	FileTab * tab;
+	tab = tab_current();
+	std::string fullFileName = tab->full_name;
+
 	// Find in array
-	for(auto& o: fullFileName) {
-		if(std::get<Fl_Text_Editor *>(o) != editor) {
-			continue;
-		}
-		std::string filename;
-		filename = std::get<std::string>(o);
-			FILE * fp;
-		fp = fopen(filename.c_str(),"wt");
-		if(fp == NULL) {
-			printf("Cannot truncate file\n");
-			return;
-		}
-		fputs(fileBuffer->text(),fp);
-		fclose(fp);
+	FILE * fp;
+	fp = fopen(fullFileName.c_str(),"wt");
+	if(fp == NULL) {
+		printf("Cannot truncate file\n");
+		return;
 	}
+	fputs(fileBuffer->text(),fp);
+	fclose(fp);
+	return;
+}
+
+void ui_save_as_file_callback(Fl_Widget * widget, void * data) {
+	Fl_Text_Editor * editor;
+	editor = editor_current();
+
+	Fl_Text_Buffer * fileBuffer = editor->buffer();
+	if(fileBuffer == NULL)
+		return;
+
+	const char * end_path = fl_file_chooser("Save file","Any file (*.*)","new_file.c",0);
+
+	FileTab * tab;
+	tab = tab_current();
+	std::string fullFileName = tab->full_name;
+
+	// Find in array
+	FILE * fp;
+	fp = fopen(end_path,"wt");
+	if(fp == NULL) {
+		printf("Cannot truncate file\n");
+		return;
+	}
+	fputs(fileBuffer->text(),fp);
+	fclose(fp);
 	return;
 }
 
@@ -323,101 +144,203 @@ void ui_enable_traces_dialog(Fl_Widget * widget, void * data) {
 	return;
 }
 
-#include <unistd.h>
-void ui_qemu_run(Fl_Widget * widget, void * data) {
-	printf("running qemu...\n");
-
-	char buf[BUFSIZ];
-	FILE * fp;
-	fp = popen("qemu-system-i386 -trace pci* -trace scsi* -trace usb* -trace sata* -trace ata* -d unimp,guest_errors","r");
-	if(fp == NULL) {
-		return;
-	}
-
-	Fl_Text_Buffer * txtBuf = new Fl_Text_Buffer();
-	while(fgets((char *)&buf,sizeof(buf),fp) != NULL) {
-		txtBuf->append(buf);
-		//std::cout << buf << std::endl;
-	}
-
-	printf("%s\n",txtBuf->text());
-
-	std::tuple<Fl_Text_Editor *, Fl_Text_Buffer *, Fl_Text_Buffer *> logOutput;
-	logOutput = ui_open_file("/tmp/logoutput_osdev_ide.txt",fileTabs);
-	std::get<1>(logOutput) = txtBuf;
-	fileContext.push_back(logOutput);
-
-	printf("pipe closed\n");
-
-	pclose(fp);
-	return;
-}
-
 void ui_when_project_gets_opened(Fl_File_Chooser * widget, void * data) {
 	const char * dir = widget->directory();
-	tree = ui_project_to_tree(project_get_paths(dir));
+	globalProjectTree = ui_project_to_tree(project_get_paths(dir));
 	return;
 }
 
 void ui_open_project(Fl_Widget * widget, void * data) {
 	//const char * pattern = "C Files (*.c)\tC Header Files (*.h)\tC++ Source Files (*.cpp)\tASM Source code (*.S)";
-
 	const char * dir;
 	dir = fl_dir_chooser("Open directory","/home",0);
+	globalCurrentDir = dir;
 	printf("Directory opened: %s\n",dir);
 	if(dir != NULL) {
-		tree = ui_project_to_tree(project_get_paths(dir));
+		globalProjectTree = ui_project_to_tree(project_get_paths(dir));
 	}
 	return;
 }
 
-int ui_main_loop(int argc, const char ** argv) {
-	Fl_Menu_Item menuItems[] = {
-		{"File",0,0,0,FL_SUBMENU},
-			{"Open project",FL_CTRL+'p',ui_open_project,0},
-			{"Create",FL_CTRL+'c',0,0},
-			{"Open",FL_CTRL+'o',0,0},
-			{"Save",FL_CTRL+'s',ui_save_file,0},
-			{"Close",FL_CTRL+'w',ui_close_file,0},
-			{"Quit",0,0,0},
-			{0},
-		{"Edit",0,0,0,FL_SUBMENU},
-			{"Undo",FL_CTRL+'z',0,0},
-			{"Redo",FL_CTRL+'y',0,0},
-			{"Find",FL_CTRL+'f',0,0},
-			{"Replace",FL_CTRL+'r',0,0},
-			{0},
-		{"Options",0,0,0,0},
-		{"Build",0,0,0,0},
-		{"Run qemu",FL_CTRL+'q',ui_qemu_run,0,0},
-		{0}
-	};
+const char * x86_asm_stub = ""
+"; Automatically generated by OS Developement IDE\n"
+"\n"
+"org 7c00h\n"
+"bits 16\n"
+"\n"
+"boot_start:\n"
+"\tcli\n"
+"\tmov ax, 7c00h\t\t; set appropriate stack\n"
+"\tadd ax, 4096+512\t; 4096 bytes after bootloader\n"
+"\txor bx, bx\t\t; set stack super fast\n"
+"\tmov ss, ax\n"
+"\tmov sp, bx\n"
+"\n"
+"\tmov si, hello_world_msg\t; print our hello world\n"
+"\tcall print\n"
+"\n"
+"sleep:\n"
+"\thlt\n"
+"\tjmp short sleep\n"
+"\n"
+"print:\n"
+"\txor al, al\n"
+"\tmov ah, 0Eh\n"
+".loop:\n"
+"\tlodsb\n"
+"\ttest al, al\n"
+"\tjz short .end\n"
+"\tint 10h\n"
+".end:\n"
+"\tret\n"
+"\n"
+"hello_world_msg: db 'Hello x86 asm world!',0x00"
+"\n";
 
-	std::vector<Fl_Text_Buffer> buffers;
-	window = new Fl_Window(1024,800,"Operating System Developement Oriented IDE");
+const char * riscv_asm_stub = ""
+"; Automatically generated by OS Developement IDE\n"
+".section .text\n"
+"entry:\n"
+"\tla gp, __global_ptr\t; set up our stack\n"
+"\tla sp, __stack_end\n"
+"\n"
+"trampoline:\n"
+"\twfi\t\t; spin forever\n"
+"\tj trampoline\n"
+"\n"
+".section .bss\n"
+"__global_ptr:\n"
+".skip 8192\n"
+"__stack_end:\n"
+"\n";
+
+const char * linker_script = ""
+"# Automatically generated by OS Developement IDE\n"
+"\n"
+"ENTRY(_my_asm_entry);\n"
+"\n"
+"SECTIONS {\n"
+"\t.text : {\n"
+"\t\t*(.text);\n"
+"\t}\n"
+"\t.data : {\n"
+"\t\t*(.data);\n"
+"\t}\n"
+"\t.bss : {\n"
+"\t\t*(.bss);\n"
+"\t\t. = ALIGN(4K);\n"
+"\t\tPROVIDE(stack_top = .);\n"
+"\t}\n"
+"\t.rodata : {\n"
+"\t\t*(.rodata);\n"
+"\t}\n"
+"}\n";
+
+const char * c_stub = ""
+"// Automatically generated by OS Developement IDE\n"
+"\n"
+"#include <stdint.h>\n"
+"#include <stddef.h>\n"
+"\n"
+"static inline void kmain(void) {\n"
+"\twhile(1) {\n"
+"\t\tkprintf(\"Hello world!\");\n"
+"\t}\n"
+"\treturn;\n"
+"}\n";
+
+void ui_create_file_stub(const char * extension, const char * stub) {
+	FileTab * tab;
+	const char * temp = tempnam("/tmp","nfile");
+	std::string end_temp = temp;
+	end_temp += extension;
+
+	tab = tab_open_file(end_temp,globalTabManager);
+	tab->textbuf->text(stub);
+	buffer_restyle(tab->textbuf,tab->stylebuf);
+	return;
+}
+
+void ui_create_file_of_type_c_stub(Fl_Widget * widget, void * data) {
+	ui_create_file_stub(".c",c_stub);
+}
+
+void ui_create_file_of_type_x86_asm_stub(Fl_Widget * widget, void * data) {
+	ui_create_file_stub(".asm",x86_asm_stub);
+}
+
+void ui_create_file_of_type_riscv_stub(Fl_Widget * widget, void * data) {
+	ui_create_file_stub(".S",riscv_asm_stub);
+	return;
+}
+
+void ui_create_file_of_type_linker_script_stub(Fl_Widget * widget, void * data) {
+	ui_create_file_stub(".ld",linker_script);
+}
+
+Fl_Menu_Item globalMenuItems[] = {
+	{"File",0,0,0,FL_SUBMENU},
+		{"Open project",FL_CTRL+'p',ui_open_project,0},
+		{"New",FL_CTRL+'n',ui_create_file_of_type_c_stub,0,FL_SUBMENU},
+			{"C",0,ui_create_file_of_type_c_stub,0},
+			{"x86 Assembly",0,ui_create_file_of_type_x86_asm_stub,0},
+			{"RISC-V Assembly",0,ui_create_file_of_type_riscv_stub,0},
+			{"Linker script",0,ui_create_file_of_type_linker_script_stub,0},
+			{0},
+		{"Open",FL_CTRL+'o',ui_open_file_callback,0},
+		{"Save",FL_CTRL+'s',ui_save_file_callback,0},
+		{"Save as",FL_CTRL+FL_ALT+'s',ui_save_as_file_callback,0},
+		{"Close",FL_CTRL+'w',ui_close_file_callback,0},
+		{"Quit",0,ui_exit,0},
+		{0},
+	{"Edit",0,0,0,FL_SUBMENU},
+		{"Copy",FL_CTRL+'c',editor_copy,0},
+		{"Paste",FL_CTRL+'v',editor_paste,0},
+		{"Cut",FL_CTRL+'x',editor_cut,0},
+		{"Undo",FL_CTRL+'z',editor_undo,0},
+		{"Redo",FL_CTRL+'y',editor_redo,0},
+		{"Find",FL_CTRL+'f',editor_find_callback,0},
+		{"Replace",FL_CTRL+'r',find_show_dialog,0},
+		{0},
+	{"Devices",0,0,0,0},
+	{"Build",0,0,0,0},
+	{"Run qemu",FL_CTRL+'q',qemu_run_callback,0,0},
+	{0}
+};
+
+#include "device_man.hpp"
+int ui_main_loop(int argc, const char ** argv) {
+	globalWindow = new Fl_Window(1024,800,"Operating System Developement Oriented IDE");
 
 	// Make menu toolbar
-	menuBar = new Fl_Menu_Bar(0,0,window->w(),fontsize);
-	menuBar->menu(menuItems);
-	window->add(menuBar);
-	window->resizable(window);
-
-	// Add project tree
-	//tree = ui_project_to_tree(project_get_paths("/home/superleaf1995/src/uDOS"));
+	globalMenuBar = new Fl_Menu_Bar(0,0,globalWindow->w(),globalFontsize);
+	globalMenuBar->menu(globalMenuItems);
+	globalWindow->add(globalMenuBar);
+	globalWindow->resizable(globalWindow);
 
 	// Create empty project tree
-	tree = new Fl_Tree(0,24,320,window->decorated_h()-fontsize);
-	tree->callback(ui_project_tree_callback);
-	window->add(tree);
+	//tree = ui_project_to_tree(project_get_paths("/home/superleaf1995/src/uDOS"));
+
+	// Project tree
+	globalProjectTree = new Fl_Tree(0,globalFontsize,320,globalWindow->decorated_h()-globalFontsize);
+	globalProjectTree->callback(ui_project_tree_callback);
+	globalWindow->add(globalProjectTree);
 
 	// Add file tabs
-	fileTabs = new Fl_Tabs(tree->w()+1,24,window->w()-322,window->h()-fontsize);
-	window->add(fileTabs);
+	globalTabManager = new Fl_Tabs(globalProjectTree->w()+1,globalFontsize,globalWindow->w()-322,globalWindow->h()-globalFontsize);
+	globalWindow->add(globalTabManager);
 
-	window->end();
-	window->show(argc,(char **)argv);
+	qemu_get_devices();
 
-	buffers.clear();
-	// ui_replace_dialog(nullptr);
+	find_create_dialog();
+
+	extern void qemu_create_device_dialog(void);
+	qemu_create_device_dialog();
+
+	extern void qemu_create_image_dialog(void);
+	qemu_create_image_dialog();
+
+	globalWindow->end();
+	globalWindow->show(argc,(char **)argv);
 	return(Fl::run());
 }

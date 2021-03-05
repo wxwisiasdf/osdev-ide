@@ -11,6 +11,10 @@ namespace std {
 #endif
 #include "project.hpp"
 
+// File context vector
+std::string globalCurrentDir;
+Fl_Tree * globalProjectTree;
+
 // Recursive fucntion
 static inline std::array<std::vector<std::string>, 2> project_recurse(std::string root) {
 	std::vector<std::string> files, dirs;
