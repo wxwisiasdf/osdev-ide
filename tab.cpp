@@ -112,10 +112,10 @@ FileTab * tab_open_file(std::string filename, Fl_Tabs *) {
 
 	Fl_Group * fileTab = new Fl_Group(globalProjectTree->w()+1,(globalFontsize*2),globalWindow->w()-globalProjectTree->w()-2,globalWindow->h()-(globalFontsize*2));
 	Fl_Text_Editor * editor = new Fl_Text_Editor(globalProjectTree->w()+1,globalFontsize*2,globalWindow->w()-globalProjectTree->w()-2,globalWindow->h()-(globalFontsize*2));
-	Fl_Text_Buffer * text = new Fl_Text_Buffer();
+	Fl_Text_Buffer * textbuf = new Fl_Text_Buffer();
 	Fl_Text_Buffer * style = new Fl_Text_Buffer();
 
-	text->text("");
+	textbuf->text("");
 
 	size_t last = filename.find_last_of('.');
 	const char * ext = filename.c_str();
@@ -148,7 +148,8 @@ FileTab * tab_open_file(std::string filename, Fl_Tabs *) {
 			}
 			auto buf = std::unique_ptr<char[]>(new char[BUFSIZ]);
 			while(fgets(buf.get(),BUFSIZ,fp) != NULL) {
-				text->append(buf.get());
+				textbuf->append(buf.get());
+				Fl::wait(); // TODO: Perform one tick, this might not be the best way to handle pipes
 			}
 			pclose(fp);
 			newFileTab->parser = &asm_parser;
@@ -162,7 +163,7 @@ FileTab * tab_open_file(std::string filename, Fl_Tabs *) {
 	// Insert file onto buffer
 	switch(newFileTab->type) {
 	case FILETAB_SOURCE_CODE:
-		text->insertfile(fullpath.get(),0);
+		textbuf->insertfile(fullpath.get(),0);
 		break;
 	case FILETAB_EXEC_NAVIGATOR:
 		break;
@@ -170,8 +171,8 @@ FileTab * tab_open_file(std::string filename, Fl_Tabs *) {
 		break;
 	}
 
-	text->add_modify_callback(tab_on_edit,style);
-	editor->buffer(text);
+	textbuf->add_modify_callback(tab_on_edit,style);
+	editor->buffer(textbuf);
 	editor->highlight_data(style,globalStyleTable,sizeof(globalStyleTable)/sizeof(globalStyleTable[0]),'A'-1,(Fl_Text_Display::Unfinished_Style_Cb)buffer_restyle,0);
 
 	// Add line numbers
@@ -197,7 +198,7 @@ FileTab * tab_open_file(std::string filename, Fl_Tabs *) {
 	globalTabManager->redraw();
 
 	// Construct object
-	newFileTab->textbuf = text;
+	newFileTab->textbuf = textbuf;
 	newFileTab->stylebuf = style;
 	newFileTab->editor = editor;
 	newFileTab->full_name = fullpath.get();

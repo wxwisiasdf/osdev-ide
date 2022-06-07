@@ -144,8 +144,25 @@ void ui_enable_traces_dialog(Fl_Widget * widget, void * data) {
 }
 
 void ui_do_build_callback(Fl_Widget * widget, void * data) {
-	const char * cmd = (const char *)data;
-	system(cmd);
+	const char * buildlog = tempnam("/tmp","ql");
+	std::string cmd = std::string((const char *)data)+" 2>&1";
+
+	std::unique_ptr<FILE,decltype(&pclose)> pipe(popen(cmd.c_str(),"r"),pclose);
+	std::string result;
+	if(!pipe) {
+		throw std::runtime_error("popen failed\n");
+	}
+	tab_open_file(buildlog,globalTabManager);
+
+	std::array<char,256> buffer;
+	while(fgets(buffer.data(),buffer.size(),pipe.get()) != nullptr) {
+		result += buffer.data();
+		
+		auto * tab = tab_current();
+		if(tab != NULL) {
+			tab->textbuf->append(result.c_str());
+		}
+	}
 	return;
 }
 

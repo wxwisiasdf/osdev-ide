@@ -5,10 +5,11 @@
 #include <memory>
 #include "qemu.hpp"
 #include "ui.hpp"
+#include "tab.hpp"
 
 std::vector<QemuDevice *> globalQemuDeviceList;
 std::string qemu_cmd = "qemu-system-x86_64";
-std::string qemu_args = "-d unimp,guest_errors -trace usb* -trace nvme* -trace virtio* -trace pci* -trace net*";
+std::string qemu_args = "-d int,unimp,guest_errors -trace usb* -trace nvme* -trace virtio* -trace pci* -trace net*";
 
 /// pipes a command and gets the stdout output of it
 static std::string get_output(const char * cmd) {
@@ -54,53 +55,34 @@ void qemu_create_image_dialog(void) {
 #include "project.hpp"
 void qemu_run_callback(Fl_Widget * widget, void * data) {
 	// new temporal files
-	const char * qlog = tempnam("/tmp","ql");
-
 	auto buf = std::unique_ptr<char[]>(new char[BUFSIZ]);
-	FILE * fp;
 
 	// create commands
-	std::string redirect_args = qemu_args;
-	redirect_args += " 2>";
-	redirect_args += qlog;
+	const char * qlog = tempnam("/tmp","ql");
+	tab_open_file(qlog,globalTabManager);
 
 	// change directory
 	chdir(globalCurrentDir.c_str());
-	printf("running \'%s %s\'",qemu_cmd.c_str(),redirect_args.c_str());
 
 	// execute in this order
 	//execl(qemu_cmd.c_str(),redirect_args.c_str());
-	std::string joint = qemu_cmd;
-	joint += " ";
-	joint += redirect_args;
-	FILE * pfp = popen(joint.c_str(),"r");
-
-	tab_open_file(qlog,globalTabManager);
-
-	fp = fopen("/tmp/qlog.txt","rt");
-	if(fp == NULL) {
-		return;
-	}
+	std::string joint = qemu_cmd+" "+qemu_args+" 2>&1";
+	printf("running \'%s\'",joint.c_str());
+	std::unique_ptr<FILE,decltype(&pclose)> pfp(popen(joint.c_str(),"r"),pclose);
 	Fl_Text_Editor * editor = editor_current();
 	if(editor == NULL) {
 		return;
 	}
 	Fl_Text_Buffer * textbuf = editor->buffer();
-
 	textbuf->text("QEMU Log output:\n");
 	textbuf->append(qemu_cmd.c_str());
 	textbuf->append(" ");
 	textbuf->append(qemu_args.c_str());
 	textbuf->append("\n\n");
-	while(fgets(buf.get(),BUFSIZ,fp) != NULL) {
+	while(fgets(buf.get(),BUFSIZ,pfp.get()) != NULL) {
 		textbuf->append(buf.get());
-		globalTabManager->redraw();
-		globalWindow->redraw();
+		Fl::wait(); // TODO: Perform one tick, this might not be the best way to handle pipes
 	}
-
-	pclose(pfp);
-	fclose(fp);
-	return;
 }
 
 #include "device_man.hpp"
