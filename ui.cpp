@@ -71,7 +71,9 @@ void ui_project_tree_callback(Fl_Widget * widget, void * data) {
 
 void ui_open_file_callback(Fl_Widget * widget, void * data) {
 	const char * end_path = fl_file_chooser("Open file","Any file (*.*)",NULL,0);
-	tab_open_file(end_path,globalTabManager);
+	if(end_path != NULL) {
+		tab_open_file(end_path,globalTabManager);
+	}
 	return;
 }
 

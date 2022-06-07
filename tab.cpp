@@ -33,6 +33,9 @@ void tab_on_edit(int pos, int nInserted, int nDeleted, int nRestyled, const char
 	}
 
 	textbuf = tab->editor->buffer();
+	if(textbuf == NULL) {
+		return;
+	}
 
 	if(nInserted == 0 && nDeleted == 0) {
 		stylebuf->unselect();
