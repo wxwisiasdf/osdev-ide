@@ -8,7 +8,7 @@ all: osdev-ide
 clean:
 	$(RM) *.o
 
-osdev-ide: buffer.o device_man.o editor.o find.o main.o project.o qemu.o tab.o ui.o syntax/asm.cpp syntax/c.cpp
+osdev-ide: buffer.o device_man.o editor.o find.o main.o project.o qemu.o tab.o ui.o syntax/asm.cpp syntax/c.cpp syntax/rust.cpp
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 %.o: %.cpp %.hpp
@@ -23,3 +23,4 @@ syntax/%.o: syntax/%.cpp syntax/%.hpp
 syntax/%.o: syntax/%.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
+.PHONY: all clean

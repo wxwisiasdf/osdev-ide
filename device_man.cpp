@@ -25,7 +25,6 @@ static const char * html_qcd_help = {
 
 static void qemu_hide_device_callback(Fl_Widget * widget, void * data) {
 	qcd_dialog->hide();
-	return;
 }
 
 static void qemu_add_device_to_arguments_callback(Fl_Widget * widget, void * data) {
@@ -58,14 +57,12 @@ static void qemu_add_device_to_arguments_callback(Fl_Widget * widget, void * dat
 		qemu_args += " "+new_dev;
 	}
 	qcd_dialog->hide();
-	return;
 }
 
 void qemu_add_device_callback(Fl_Widget * widget, void * data) {
 	const char * name = (const char *)data;
 	qcd_name->value(name);
 	qcd_dialog->show();
-	return;
 }
 
 void qemu_create_device_dialog(void) {
@@ -88,5 +85,4 @@ void qemu_create_device_dialog(void) {
 	qcd_create->callback(qemu_add_device_to_arguments_callback);
 
 	qcd_dialog->end();
-	return;
 }

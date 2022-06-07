@@ -20,8 +20,8 @@ FileTab * tab_current(void) {
 	return NULL;
 }
 
+static int recur_lock = 0;
 void tab_on_edit(int pos, int nInserted, int nDeleted, int nRestyled, const char * delText, void * cbArg) {
-	Fl_Text_Editor * editor;
 	Fl_Text_Buffer * stylebuf, * textbuf;
 	FileTab * tab;
 
@@ -40,6 +40,43 @@ void tab_on_edit(int pos, int nInserted, int nDeleted, int nRestyled, const char
 	if(nInserted == 0 && nDeleted == 0) {
 		stylebuf->unselect();
 		return;
+	}
+
+	// Auto-brace completion
+	const char * all_text = textbuf->text();
+	// TODO: This calls itself recursively
+	if(!recur_lock && nDeleted == 0 && pos > 0 && all_text[pos] == '\n') { // Handle braces
+		int i = pos-1;
+		// Go to the previous newline
+		while(i != 0) {
+			if(all_text[i] == '\n') {
+				i++;
+				break;
+			}
+			i--;
+		}
+		// Analyze the tabs
+		std::string identStr = "";
+		while(all_text[i] == '\t') {
+			identStr += "\t";
+			i++;
+		}
+		// Add an extra level of identation on braces
+		if(pos-1 >= 0 && all_text[pos-1] == '{') {
+			identStr += "\t";
+		}
+		
+		recur_lock = 1;
+		textbuf->insert(pos+1,identStr.c_str());
+		recur_lock = 0;
+
+		for(const auto& ch : identStr) {
+			if(ch == '\t' || ch == ' ') {
+				tab->editor->move_right();
+			} else if(ch == '\n') {
+				tab->editor->move_down();
+			}
+		}
 	}
 
 	// reparse entire line now
@@ -66,6 +103,7 @@ void tab_on_edit(int pos, int nInserted, int nDeleted, int nRestyled, const char
 
 #include "syntax/asm.hpp"
 #include "syntax/c.hpp"
+#include "syntax/rust.hpp"
 #include "editor.hpp"
 #include <unistd.h>
 FileTab * tab_open_file(std::string filename, Fl_Tabs *) {
@@ -82,12 +120,16 @@ FileTab * tab_open_file(std::string filename, Fl_Tabs *) {
 	size_t last = filename.find_last_of('.');
 	const char * ext = filename.c_str();
 	newFileTab->parser = NULL;
+	newFileTab->type = FILETAB_SOURCE_CODE;
 	if(ext != NULL) {
 		ext = &ext[last+1];
 
 		// source code stuff
 		if(!strcasecmp("c",ext) || !strcasecmp("cpp",ext) || !strcasecmp("cxx",ext) || !strcasecmp("hpp",ext) || !strcasecmp("h",ext)) {
 			newFileTab->parser = &c_parser;
+			newFileTab->type = FILETAB_SOURCE_CODE;
+		} else if(!strcasecmp("rust",ext) || !strcasecmp("rs",ext)) {
+			newFileTab->parser = &rust_parser;
 			newFileTab->type = FILETAB_SOURCE_CODE;
 		} else if(!strcasecmp("asm",ext) || !strcasecmp("s",ext)) {
 			newFileTab->parser = &asm_parser;
@@ -110,9 +152,6 @@ FileTab * tab_open_file(std::string filename, Fl_Tabs *) {
 			}
 			pclose(fp);
 			newFileTab->parser = &asm_parser;
-		} else {
-			newFileTab->parser = NULL;
-			newFileTab->type = FILETAB_SOURCE_CODE;
 		}
 	}
 

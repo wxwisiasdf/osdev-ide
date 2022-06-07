@@ -135,8 +135,7 @@ std::vector<QemuDevice *> qemu_get_devices(void) {
 		ndev->name = name;
 		dev.push_back(ndev);
 
-		std::string endItem = "Devices/";
-		endItem += name;
+		std::string endItem = "Devices/"+std::string(name);
 		globalMenuBar->insert(-1,endItem.c_str(),0,qemu_add_device_callback,(void *)ndev->name.c_str(),0);
 	}
 	return dev;
