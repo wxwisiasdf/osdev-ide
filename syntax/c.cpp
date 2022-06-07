@@ -5,10 +5,16 @@ static const char * keywords[] = {
 	"template","nullptr","static","inline","const","char","unsigned","void","dynamic_cast",
 	"static_cast","case","switch","if","else","goto","break","continue","while","do","for",
 	"shared_ptr","class","new","delete","return","auto","extern","int","long","typedef",
-	"typeof","sizeof","struct","union","enum","interrupt""asm","volatile","namespace","using",
+	"typeof","sizeof","struct","union","enum","interrupt","asm","volatile","namespace","using",
 	"true","false","fullptr","exception","bool","throw","catch","public","private","virtual",
 	"float","double","protected","or","and","xor","not","this","try","typename","explicit",
-	"const_cast","operator","static_cast","signed","short"
+	"const_cast","operator","static_cast","signed","short",
+	"__attribute__","noexcept","restrict","reinterpret_cast","__asm__","__asm","non_null",
+	"constexpr",
+	// types
+	"uint8_t","int8_t","uint16_t","int16_t","uint32_t","int32_t","uint64_t","int64_t","fpos_t",
+	"dev_t","inode_t","time_t","pid_t","block_t","ssize_t","size_t","intmax_t","uintmax_t",
+	"intfast_t","uintfast_t","atomic_t","mutex_t","float_t","double_t"
 };
 
 void c_parser(const char * text, char * style, int length) {
