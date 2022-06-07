@@ -45,11 +45,10 @@ void tab_on_edit(int pos, int nInserted, int nDeleted, int nRestyled, const char
 
     // Insert characters into the style buffer...
 	if(nInserted > 0) {
-		char * style = new char[nInserted+1];
-		memset(style,'A',nInserted);
+		auto style = std::unique_ptr<char[]>(new char[nInserted+1]);
+		memset(style.get(),'A',nInserted);
 		style[nInserted] = '\0';
-		stylebuf->replace(pos,pos+nDeleted,style);
-		delete[] style;
+		stylebuf->replace(pos,pos+nDeleted,style.get());
 	} else {
 		// Remove from the style buffer
 		stylebuf->remove(pos,pos+nDeleted);
@@ -102,30 +101,33 @@ FileTab * tab_open_file(std::string filename, Fl_Tabs *) {
 			if(fp == NULL) {
 				return NULL;
 			}
-			char * buf = new char[BUFSIZ];
-			while(fgets(buf,BUFSIZ,fp) != NULL) {
-				text->append(buf);
+			auto buf = std::unique_ptr<char[]>(new char[BUFSIZ]);
+			while(fgets(buf.get(),BUFSIZ,fp) != NULL) {
+				text->append(buf.get());
 			}
-			delete[] buf;
 			pclose(fp);
 			newFileTab->parser = &asm_parser;
+		} else {
+			newFileTab->parser = NULL;
+			newFileTab->type = FILETAB_SOURCE_CODE;
 		}
 	}
 
 	// Full path pointer (given to widget FileTab object later)
-	char * fullpath = new char[filename.length()+1];
-	strcpy(fullpath,filename.c_str());
+	auto fullpath = std::unique_ptr<char[]>(new char[filename.length()+1]);
+	strcpy(fullpath.get(),filename.c_str());
 
 	// Insert file onto buffer
 	switch(newFileTab->type) {
 	case FILETAB_SOURCE_CODE:
-		text->insertfile(fullpath,0);
+		text->insertfile(fullpath.get(),0);
 		break;
 	case FILETAB_EXEC_NAVIGATOR:
 		break;
+	default:
+		break;
 	}
 
-	delete fullpath;
 	text->add_modify_callback(tab_on_edit,style);
 	editor->buffer(text);
 	editor->highlight_data(style,globalStyleTable,sizeof(globalStyleTable)/sizeof(globalStyleTable[0]),'A'-1,(Fl_Text_Display::Unfinished_Style_Cb)buffer_restyle,0);
@@ -156,7 +158,7 @@ FileTab * tab_open_file(std::string filename, Fl_Tabs *) {
 	newFileTab->textbuf = text;
 	newFileTab->stylebuf = style;
 	newFileTab->editor = editor;
-	newFileTab->full_name = fullpath;
+	newFileTab->full_name = fullpath.get();
 	newFileTab->tabref = fileTab;
 
 	// Add to global list

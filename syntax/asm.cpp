@@ -1,4 +1,5 @@
 #include <cstring>
+#include <memory>
 #include <ctype.h>
 
 static const char * directives[] = {
@@ -104,11 +105,11 @@ void asm_parser(const char * text, char * style, int length) {
 				if(!diff) {
 					continue;
 				}
-				char * partText = new char[diff+1];
-				strncpy(partText,&text[i],diff);
+				auto partText = std::unique_ptr<char[]>(new char[diff+1]);
+				strncpy(partText.get(),&text[i],diff);
 				partText[diff] = '\0';
 				for(size_t j = 0; j < (sizeof(keywords)/sizeof(const char *))-1; j++) {
-					if(strcasecmp(keywords[j],partText)) {
+					if(strcasecmp(keywords[j],partText.get())) {
 						continue;
 					}
 					memset(&style[i],'E',strlen(keywords[j]));
@@ -116,14 +117,13 @@ void asm_parser(const char * text, char * style, int length) {
 					break;
 				}
 				for(size_t j = 0; j < (sizeof(directives)/sizeof(const char *))-1; j++) {
-					if(strcasecmp(directives[j],partText)) {
+					if(strcasecmp(directives[j],partText.get())) {
 						continue;
 					}
 					memset(&style[i],'D',strlen(directives[j]));
 					i += diff;
 					break;
 				}
-				delete[] partText;
 				continue;
 			}
 		}

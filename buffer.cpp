@@ -2,12 +2,20 @@
 #include "tab.hpp"
 
 Fl_Text_Display::Style_Table_Entry globalStyleTable[32] = {
+#if 0
 	{FL_BLACK,		FL_COURIER,			FL_NORMAL_SIZE}, // Plain
 	{FL_DARK_GREEN,	FL_COURIER,			FL_NORMAL_SIZE}, // Macros
 	{FL_GRAY,		FL_COURIER_ITALIC,	FL_NORMAL_SIZE}, // Comments
 	{FL_BLUE,		FL_COURIER,			FL_NORMAL_SIZE}, // Number
 	{FL_BLUE,		FL_COURIER_BOLD,	FL_NORMAL_SIZE}, // Keywords
 	{FL_RED,		FL_COURIER,			FL_NORMAL_SIZE}, // Strings
+#endif
+	{FL_BLACK,		FL_COURIER,			FL_NORMAL_SIZE}, // Plain
+	{FL_DARK_GREEN,	FL_COURIER,			FL_NORMAL_SIZE}, // Macros
+	{FL_DARK_GREEN,	FL_COURIER_ITALIC,	FL_NORMAL_SIZE}, // Comments
+	{FL_RED,		FL_COURIER_ITALIC,	FL_NORMAL_SIZE}, // Number
+	{FL_RED,		FL_COURIER_ITALIC,	FL_NORMAL_SIZE}, // Keywords
+	{FL_DARK_GREEN,	FL_COURIER,			FL_NORMAL_SIZE}, // Strings
 };
 
 void buffer_syntax_hl(Fl_Text_Buffer * textbuf, Fl_Text_Buffer * stylebuf, int start, int end, char * new_style) {

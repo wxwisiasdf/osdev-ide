@@ -1,14 +1,7 @@
 #include <version>
 #include <array>
 #include <experimental/array>
-#ifdef __cpp_lib_filesystem
-#	include <filesystem>
-#elif __cpp_lib_experimental_filesystem
-#	include <experimental/filesystem>
-namespace std {
-	namespace filesystem = experimental::filesystem;
-};
-#endif
+#include <filesystem>
 #include "project.hpp"
 
 // File context vector

@@ -47,14 +47,19 @@ void c_parser(const char * text, char * style, int length) {
 		} else if(text[i] == '\'' || text[i] == '"') {
 			// strings require a bit of special parsing
 			// TODO: Parse \" like this
+			const size_t start_i = i;
 			base = text[i];
 			style[i] = 'F';
 			i++;
-			while(text[i] != base && i < length-1) {
+			while(text[i] != base && text[i] != '\n' && i < length-1) {
 				style[i] = 'F';
 				i++;
 			}
-			style[i] = 'F';
+			if(text[i] == base) {
+				style[i] = 'F';
+			} else {
+				memset(&style[start_i],'A',i-start_i); // Reset style
+			}
 		} else if(text[i] >= '0' && text[i] <= '9') {
 			// a number
 			while(isalnum(text[i])) {
@@ -70,9 +75,7 @@ void c_parser(const char * text, char * style, int length) {
 			if(!diff) {
 				continue;
 			}
-
-			// Reset style
-			memset(&style[i],'A',diff);
+			memset(&style[i],'A',diff); // Reset style
 			for(size_t j = 0; j < (sizeof(keywords)/sizeof(const char *))-1; j++) {
 				// check if it matches
 				if(strncmp(keywords[j],&text[i],diff) || diff < strlen(keywords[j])) {
